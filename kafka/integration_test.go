@@ -21,6 +21,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/exec"
 	"path"
 	"reflect"
 	"runtime"
@@ -30,7 +32,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
-	"github.com/testcontainers/testcontainers-go/modules/compose"
 )
 
 // producer test control
@@ -599,13 +600,25 @@ func validateConfig(t *testing.T, results []ConfigResourceResult, expResults []C
 
 type IntegrationTestSuite struct {
 	suite.Suite
-	compose *compose.LocalDockerCompose
+	composeFiles []string
 }
 
 func (its *IntegrationTestSuite) TearDownSuite() {
-	if testconf.DockerNeeded && its.compose != nil {
-		its.compose.Down()
+	if testconf.DockerNeeded && len(its.composeFiles) > 0 {
+		its.runDockerCompose("down")
 	}
+}
+
+func (its *IntegrationTestSuite) runDockerCompose(args ...string) error {
+	fullArgs := []string{"compose"}
+	for _, file := range its.composeFiles {
+		fullArgs = append(fullArgs, "-f", file)
+	}
+	fullArgs = append(fullArgs, args...)
+	cmd := exec.Command("docker", fullArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // TestConsumerSeekPartitions tests seeking of partitions using SeekPartitions().
@@ -3569,9 +3582,9 @@ func TestIntegration(t *testing.T) {
 		if !testConsumerGroupProtocolClassic() {
 			dockerCompose = "./testresources/docker-compose-kraft.yaml"
 		}
-		its.compose = compose.NewLocalDockerCompose([]string{dockerCompose}, "test-docker")
-		execErr := its.compose.WithCommand([]string{"up", "-d"}).Invoke()
-		if err := execErr.Error; err != nil {
+		its.composeFiles = []string{dockerCompose}
+		err := its.runDockerCompose("up", "-d")
+		if err != nil {
 			t.Fatalf("up -d command failed with the error message %s\n", err)
 		}
 		// It takes some time after the containers come up for them to be ready.
